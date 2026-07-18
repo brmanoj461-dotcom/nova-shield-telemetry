@@ -1,256 +1,124 @@
-import sqlite3
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import os
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Dict, List
 
-app = FastAPI(title="Nova-Shield Telemetry Hub")
+# Initialize FastAPI App
+app = FastAPI(title="Nova-Shield Telemetry Core")
 
-# Enable CORS so the frontend dashboard can securely make API requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Global in-memory storage simulating your metrics/state
+# Tracks the incoming multi-tenant infrastructure clusters
+telemetry_data: Dict[str, dict] = {}
 
-DB_FILE = "telemetry.db"
+# Define the expected telemetry payload validation layout
+class TelemetryPayload(BaseModel):
+    cluster_id: str
+    tenant_id: str
+    status: str
+    cpu_utilization: float
+    memory_utilization: float
+    network_throughput_mbps: float
 
-# --- Database Initialization ---
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Create tenants table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS tenants (
-        tenant_id TEXT PRIMARY KEY,
-        api_key TEXT NOT NULL
-    )
-    """)
-    
-    # Create logs table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tenant_id TEXT,
-        level TEXT,
-        message TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id)
-    )
-    """)
-    
-    # Seed default dummy tenants if table is empty
-    cursor.execute("SELECT COUNT(*) FROM tenants")
-    if cursor.fetchone()[0] == 0:
-        default_tenants = [
-            ("tenant_alpha", "alpha_secret_key_2026"),
-            ("tenant_beta", "beta_secure_token_abc"),
-            ("tenant_ninja", "your_secure_tenant_key")
-        ]
-        cursor.executemany("INSERT INTO tenants (tenant_id, api_key) VALUES (?, ?)", default_tenants)
-        
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# --- Pydantic Schemas ---
-class LogPayload(BaseModel):
-    tenant: str
-    level: str
-    message: str
-
-# --- Authentication Dependency ---
-async def verify_api_key(request: Request):
-    api_key = request.headers.get("X-API-Key")
-    if not api_key:
-        raise HTTPException(status_code=401, detail="Missing X-API-Key header")
-    
-    # Read the body to check if tenant matches key
-    try:
-        body = await request.json()
-        tenant_id = body.get("tenant")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT api_key FROM tenants WHERE tenant_id = ?", (tenant_id,))
-    result = cursor.fetchone()
-    conn.close()
-
-    if not result or result[0] != api_key:
-        raise HTTPException(status_code=403, detail="Unauthorized: Invalid Tenant ID or API Key mapping")
-    
-    return tenant_id
-
-# --- API Endpoints ---
-
-@app.post("/submit-log")
-def submit_log(payload: LogPayload, authorized_tenant: str = Depends(verify_api_key)):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO logs (tenant_id, level, message) VALUES (?, ?, ?)",
-        (payload.tenant, payload.level.upper(), payload.message)
-    )
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": f"Log ingested securely for {authorized_tenant}"}
-
-@app.get("/api/metrics")
-def get_metrics():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # 1. Total streams/logs
-    cursor.execute("SELECT COUNT(*) FROM logs")
-    total_logs = cursor.fetchone()[0]
-    
-    # 2. Total active tenants logged
-    cursor.execute("SELECT COUNT(DISTINCT tenant_id) FROM logs")
-    active_tenants = cursor.fetchone()[0]
-    
-    # 3. Critical incidents count
-    cursor.execute("SELECT COUNT(*) FROM logs WHERE level = 'CRITICAL'")
-    critical_incidents = cursor.fetchone()[0]
-    
-    # 4. Recent logs feed
-    cursor.execute("SELECT tenant_id, level, message, timestamp FROM logs ORDER BY id DESC LIMIT 5")
-    rows = cursor.fetchall()
-    recent_logs = []
-    for row in rows:
-        recent_logs.append({
-            "tenant": row[0],
-            "level": row[1],
-            "message": row[2],
-            "timestamp": row[3]
-        })
-        
-    conn.close()
-    
-    return {
-        "total_logs": total_logs,
-        "active_tenants": active_tenants,
-        "critical_incidents": critical_incidents,
-        "recent_logs": recent_logs
+# ==========================================
+# 1. API Endpoint for Simulator Sidecar
+# ==========================================
+@app.post("/api/v1/telemetry")
+async def receive_telemetry(payload: TelemetryPayload):
+    """
+    Receives live performance data from the sidecar simulator
+    running on localhost within the same Fargate task network namespace.
+    """
+    # Store or update cluster metrics based on unique cluster identifier
+    telemetry_data[payload.cluster_id] = {
+        "tenant_id": payload.tenant_id,
+        "status": payload.status,
+        "cpu": f"{payload.cpu_utilization}%",
+        "memory": f"{payload.memory_utilization}%",
+        "network": f"{payload.network_throughput_mbps} Mbps"
     }
+    return {"status": "success", "processed_clusters": len(telemetry_data)}
 
+# ==========================================
+# 2. Frontend View Routing Layout
+# ==========================================
 @app.get("/dashboard", response_class=HTMLResponse)
-def read_dashboard():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Nova-Shield Command Center</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-6 mb-8 gap-4">
+async def get_dashboard(request: Request):
+    """
+    Renders the live monitoring dashboard layout populated with real-time telemetry data.
+    """
+    # Build HTML dynamically to avoid static file lookup failures on container runtimes
+    cluster_count = len(telemetry_data)
+    
+    # Generate live profiles rows if data stream exists
+    profiles_html = ""
+    if not telemetry_data:
+        profiles_html = '<div style="color: #a0aec0; font-style: italic; text-align: center; padding: 20px;">Awaiting data streams from network server simulator...</div>'
+    else:
+        for cid, info in telemetry_data.items():
+            profiles_html += f"""
+            <div style="background: #2d3748; padding: 15px; border-radius: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h1 class="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                        🛡️ Nova-Shield Hub
-                    </h1>
-                    <p class="text-slate-400 mt-1 text-sm">Real-time Multi-Tenant Security Telemetry Monitor</p>
+                    <strong style="color: #63b3ed;">Cluster: {cid}</strong> <span style="font-size: 12px; color: #cbd5e0; margin-left: 10px;">Tenant: {info['tenant_id']}</span>
                 </div>
-                <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
-                    <span class="relative flex h-2.5 w-2.5">
-                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                    </span>
-                    <span class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Engine Live</span>
+                <div style="display: flex; gap: 20px;">
+                    <span>CPU: <strong style="color: #48bb78;">{info['cpu']}</strong></span>
+                    <span>Mem: <strong style="color: #48bb78;">{info['memory']}</strong></span>
+                    <span>Net: <strong style="color: #48bb78;">{info['network']}</strong></span>
+                    <span style="background: #2f855a; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{info['status']}</span>
+                </div>
+            </div>
+            """
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Nova-Shield Telemetry Dashboard</title>
+        <meta http-equiv="refresh" content="3"> <!-- Auto-refresh page every 3 seconds to pull live updates -->
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a202c; color: #fff; margin: 0; padding: 40px; }}
+            .container {{ max-width: 900px; margin: 0 auto; }}
+            .card {{ background: #2d3748; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+            h1 {{ color: #3182ce; margin-bottom: 5px; }}
+            .subtitle {{ color: #a0aec0; margin-bottom: 30px; font-size: 14px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Nova-Shield Telemetry Core</h1>
+            <div class="subtitle">Multi-Tenant Infrastructure Analytics Engine</div>
+            
+            <div class="grid">
+                <div class="card">
+                    <div style="font-size: 12px; text-transform: uppercase; color: #a0aec0; font-weight: bold; margin-bottom: 5px;">Monitored Infrastructure Clusters</div>
+                    <div style="font-size: 36px; font-weight: bold; color: #63b3ed;">{cluster_count}</div>
+                </div>
+                <div class="card">
+                    <div style="font-size: 12px; text-transform: uppercase; color: #a0aec0; font-weight: bold; margin-bottom: 5px;">Data Pipeline Protocol</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #cbd5e0; margin-top: 10px;">REST HTTP/JSON + AWS S3</div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-md">
-                    <p class="text-sm font-medium text-slate-400 uppercase tracking-wider">Total Streams Ingested</p>
-                    <p id="total-logs" class="text-4xl font-extrabold mt-2 text-blue-400">0</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-md">
-                    <p class="text-sm font-medium text-slate-400 uppercase tracking-wider">Active Secure Nodes</p>
-                    <p id="active-tenants" class="text-4xl font-extrabold mt-2 text-indigo-400">0</p>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-md border-l-4 border-l-red-500">
-                    <p class="text-sm font-medium text-slate-400 uppercase tracking-wider">Critical Anomalies</p>
-                    <p id="critical-incidents" class="text-4xl font-extrabold mt-2 text-red-400">0</p>
-                </div>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-md">
-                <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-                    <h2 class="font-semibold text-slate-200">Live Telemetry Stream Feed</h2>
-                    <span class="text-xs text-slate-500">Refreshes automatically every 2s</span>
-                </div>
-                <div id="log-container" class="divide-y divide-slate-800 px-6 max-h-[400px] overflow-y-auto">
-                    <p class="text-slate-500 text-sm py-8 text-center">Awaiting streaming nodes authorization initialization...</p>
+            <div class="card">
+                <h3 style="margin-top: 0; border-bottom: 1px solid #4a5568; padding-bottom: 10px; color: #edf2f7;">Live Target Profiles</h3>
+                <div style="margin-top: 15px;">
+                    {profiles_html}
                 </div>
             </div>
         </div>
-
-        <script>
-            async function fetchUpdates() {
-                try {
-                    const response = await fetch('/api/metrics');
-                    if (!response.ok) throw new Error("Network metrics polling failed");
-                    const data = await response.json();
-                    
-                    // Update main cards
-                    document.getElementById('total-logs').innerText = data.total_logs;
-                    document.getElementById('active-tenants').innerText = data.active_tenants;
-                    document.getElementById('critical-incidents').innerText = data.critical_incidents;
-                    
-                    // Update Feed container
-                    const container = document.getElementById('log-container');
-                    if(data.recent_logs.length === 0) {
-                        container.innerHTML = `<p class="text-slate-500 text-sm py-8 text-center">No logs ingested yet. Send a POST request to track logs!</p>`;
-                        return;
-                    }
-                    
-                    container.innerHTML = data.recent_logs.map(log => {
-                        let badgeColor = "bg-slate-800 text-slate-300 border-slate-700";
-                        if (log.level === 'CRITICAL') badgeColor = "bg-red-950/40 text-red-400 border-red-900/50";
-                        if (log.level === 'WARNING') badgeColor = "bg-amber-950/40 text-amber-400 border-amber-900/50";
-                        if (log.level === 'INFO') badgeColor = "bg-blue-950/40 text-blue-400 border-blue-900/50";
-                        
-                        return `
-                            <div class="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                <div class="flex items-start gap-3">
-                                    <span class="px-2 py-0.5 rounded text-xs font-mono font-bold uppercase tracking-wide border ${badgeColor} mt-0.5">
-                                        \${log.level}
-                                    </span>
-                                    <div>
-                                        <span class="text-xs font-semibold font-mono text-indigo-400">\${log.tenant}</span>
-                                        <p class="text-slate-300 text-sm mt-0.5 font-mono">\${log.message}</p>
-                                    </div>
-                                </div>
-                                <span class="text-xs text-slate-500 font-mono sm:self-start mt-1">\${log.timestamp}</span>
-                            </div>
-                        `;
-                    }).join('');
-                } catch (error) {
-                    console.error("Dashboard Sync Error:", error);
-                }
-            }
-
-            fetchUpdates();
-            setInterval(fetchUpdates, 2000);
-        </script>
     </body>
     </html>
     """
+    return HTMLResponse(content=html_content, status_code=200)
 
-# --- Server Lifecycle Ingress Engine ---
+# ==========================================
+# 3. Application Runner Entrypoint
+# ==========================================
 if __name__ == "__main__":
     import uvicorn
-    import os
-    # Render provides a PORT environment variable dynamically on runtime
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("backend.app:app", host="0.0.0.0", port=port)
+    # Fargate requires binding to 0.0.0.0 instead of 127.0.0.1 to accept external traffic
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)

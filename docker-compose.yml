@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  nova-shield-server:
+    build: 
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Automatically passes your local AWS CLI credentials into the container securely
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - AWS_DEFAULT_REGION=us-east-1
+    restart: always
+
+  telemetry-simulator:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "backend.simulator"]
+    depends_on:
+      - nova-shield-server
+    restart: always
