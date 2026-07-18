@@ -1,31 +1,21 @@
-# 🛡️ Nova-Shield: Secure Multi-Tenant Telemetry Hub
+# Nova Shield Cloud Telemetry Dashboard
 
-Nova-Shield is an enterprise-grade, lightweight SaaS network logging and telemetry ingestion engine. Built with **FastAPI** and backed by a robust **SQLite** database, it allows multiple tenants to securely stream log payloads using authenticated HTTP header verification.
+A high-performance, containerized telemetry monitoring system built with Python and FastAPI. It uses a multi-container sidecar architecture deployed on AWS Fargate to collect and display live multi-tenant infrastructure metrics.
 
-The hub features a real-time responsive analytics dashboard powered by **Tailwind CSS** that pulls live database changes every 2 seconds without requiring any page reloads.
+## 🚀 Architecture Overview
 
----
-
-## 🚀 Key Architectural Features
-
-* **Multi-Tenant Isolation:** Validates incoming streams by cross-referencing tenant identifiers with registered secrets in a secure database.
-* **Header-Based Authentication:** Employs secure `X-API-Key` validation inside HTTP request headers to reject unauthorized log spoofing.
-* **SQLite Relational Storage:** Replaced flat-file log storage with structured database indexes, ensuring highly performant querying.
-* **Real-Time Polling UI:** Features an executive dark-mode command center displaying live counters for log streams, active nodes, and active critical security incidents.
-
----
+*   **Application Server (`app.py`)**: A FastAPI backend serving as the central telemetry ingestion API (`/api/v1/telemetry`) and a real-time tracking dashboard (`/dashboard`).
+*   **Simulator Sidecar (`simulator.py`)**: A background agent that runs alongside the server in the same Fargate task network namespace, streaming simulated infrastructure logs down the internal `localhost` loop.
 
 ## 🛠️ Tech Stack
 
-* **Backend:** FastAPI (Python)
-* **Database:** SQLite3
-* **Frontend:** HTML5, Tailwind CSS, JavaScript (Fetch API / Polling)
+*   **Backend & Simulation**: Python 3.11, FastAPI, Uvicorn, Requests
+*   **Infrastructure**: AWS Fargate (ECS, `awsvpc` mode), Amazon ECR, CloudWatch Logging
+*   **IaC & Automation**: Terraform, GitHub Actions (CI/CD)
 
----
+## 📦 Deployment Workflow
 
-## 📦 Local Installation & Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/your-username/nova-shield-telemetry.git](https://github.com/your-username/nova-shield-telemetry.git)
-   cd nova-shield-telemetry
+This project is fully automated via GitHub Actions (`deploy.yml`). On every push to `main`:
+1. Both the Server and Simulator Docker images are built.
+2. Images are pushed to individual Amazon ECR repositories.
+3. An ECS Task definition update is triggered to force a rolling deployment on AWS Fargate.
