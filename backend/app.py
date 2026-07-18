@@ -1,115 +1,65 @@
 import os
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Dict
+from typing import List
 
-# Initialize FastAPI App
-app = FastAPI(title="Nova-Shield Telemetry Core")
+app = FastAPI(title="Nova Shield Telemetry Engine")
 
-# Global in-memory storage simulating your metrics/state
-telemetry_data: Dict[str, dict] = {}
+# In-memory storage for demonstration metrics
+telemetry_db = []
 
-# Define the expected telemetry payload validation layout
-class TelemetryPayload(BaseModel):
-    cluster_id: str
-    tenant_id: str
+class TelemetryData(BaseModel):
+    device_id: str
+    timestamp: float
     status: str
-    cpu_utilization: float
-    memory_utilization: float
-    network_throughput_mbps: float
+    metric_value: float
 
-# ==========================================
-# 0. Root Redirect (Fixes empty landing page)
-# ==========================================
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def root_redirect():
-    """Redirects the base URL straight to the telemetry dashboard."""
-    return RedirectResponse(url="/dashboard")
+    return HTMLResponse(content="<script>window.location.href='/dashboard';</script>", status_code=200)
 
-# ==========================================
-# 1. API Endpoint for Simulator Sidecar
-# ==========================================
-@app.post("/api/v1/telemetry")
-async def receive_telemetry(payload: TelemetryPayload):
-    """
-    Receives live performance data from the sidecar simulator
-    running on localhost within the same Fargate task network namespace.
-    """
-    telemetry_data[payload.cluster_id] = {
-        "tenant_id": payload.tenant_id,
-        "status": payload.status,
-        "cpu": f"{payload.cpu_utilization}%",
-        "memory": f"{payload.memory_utilization}%",
-        "network": f"{payload.network_throughput_mbps} Mbps"
-    }
-    return {"status": "success", "processed_clusters": len(telemetry_data)}
+@app.post("/api/v1/telemetry", status_code=201)
+async def ingest_telemetry(data: TelemetryData):
+    telemetry_db.append(data.dict())
+    # Keep database bound to the last 50 entries for memory efficiency
+    if len(telemetry_db) > 50:
+        telemetry_db.pop(0)
+    return {"status": "success", "received": data.device_id}
 
-# ==========================================
-# 2. Frontend View Routing Layout
-# ==========================================
 @app.get("/dashboard", response_class=HTMLResponse)
-async def get_dashboard(request: Request):
-    """
-    Renders the live monitoring dashboard layout populated with real-time telemetry data.
-    """
-    cluster_count = len(telemetry_data)
-    
+async def get_dashboard():
+    # Build a simple real-time visualization layer
     profiles_html = ""
-    if not telemetry_data:
-        profiles_html = '<div style="color: #a0aec0; font-style: italic; text-align: center; padding: 20px;">Awaiting data streams from network server simulator...</div>'
-    else:
-        for cid, info in telemetry_data.items():
-            profiles_html += f"""
-            <div style="background: #2d3748; padding: 15px; border-radius: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <strong style="color: #63b3ed;">Cluster: {cid}</strong> <span style="font-size: 12px; color: #cbd5e0; margin-left: 10px;">Tenant: {info['tenant_id']}</span>
-                </div>
-                <div style="display: flex; gap: 20px;">
-                    <span>CPU: <strong style="color: #48bb78;">{info['cpu']}</strong></span>
-                    <span>Mem: <strong style="color: #48bb78;">{info['memory']}</strong></span>
-                    <span>Net: <strong style="color: #48bb78;">{info['network']}</strong></span>
-                    <span style="background: #2f855a; padding: 2px 8px; border-radius: 4px; font-size: 12px;">{info['status']}</span>
-                </div>
-            </div>
-            """
-
+    for entry in reversed(telemetry_db):
+        profiles_html += f"""
+        <div style='padding: 10px; margin: 5px 0; background: #eef2f3; border-left: 4px solid #007bff;'>
+            <strong>Device:</strong> {entry['device_id']} | 
+            <strong>Status:</strong> {entry['status']} | 
+            <strong>Value:</strong> {entry['metric_value']}
+        </div>
+        """
+    
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Nova-Shield Telemetry Dashboard</title>
-        <meta http-equiv="refresh" content="3"> 
+        <title>Nova Shield Telemetry Dashboard</title>
+        <meta http-equiv="refresh" content="3">
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a202c; color: #fff; margin: 0; padding: 40px; }}
-            .container {{ max-width: 900px; margin: 0 auto; }}
-            .card {{ background: #2d3748; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
-            h1 {{ color: #3182ce; margin-bottom: 5px; }}
-            .subtitle {{ color: #a0aec0; margin-bottom: 30px; font-size: 14px; }}
+            body {{ font-family: Arial, sans-serif; margin: 40px; background: #fafafa; color: #333; }}
+            .container {{ max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            h1 {{ color: #007bff; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>Nova-Shield Telemetry Core</h1>
-            <div class="subtitle">Multi-Tenant Infrastructure Analytics Engine</div>
-            
-            <div class="grid">
-                <div class="card">
-                    <div style="font-size: 12px; text-transform: uppercase; color: #a0aec0; font-weight: bold; margin-bottom: 5px;">Monitored Infrastructure Clusters</div>
-                    <div style="font-size: 36px; font-weight: bold; color: #63b3ed;">{cluster_count}</div>
-                </div>
-                <div class="card">
-                    <div style="font-size: 12px; text-transform: uppercase; color: #a0aec0; font-weight: bold; margin-bottom: 5px;">Data Pipeline Protocol</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #cbd5e0; margin-top: 10px;">REST HTTP/JSON + AWS S3</div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="margin-top: 0; border-bottom: 1px solid #4a5568; padding-bottom: 10px; color: #edf2f7;">Live Target Profiles</h3>
-                <div style="margin-top: 15px;">
-                    {profiles_html}
-                </div>
+            <h1>Nova Shield Live Telemetry Monitor</h1>
+            <p>Status: <span style="color: green; font-weight: bold;">Connected Engine Active</span></p>
+            <hr/>
+            <h3>Recent Metrics Profiles:</h3>
+            <div>
+                {profiles_html if profiles_html else "<p style='color: #777;'>Waiting for simulation stream updates...</p>"}
             </div>
         </div>
     </body>
@@ -117,9 +67,6 @@ async def get_dashboard(request: Request):
     """
     return HTMLResponse(content=html_content, status_code=200)
 
-# ==========================================
-# 3. Application Runner Entrypoint
-# ==========================================
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
