@@ -7,7 +7,7 @@ on:
 env:
   AWS_REGION: us-east-1                  # Double check if your Fargate cluster is in a different region
   ECS_SERVICE: nova-shield-service       
-  ECS_CLUSTER: nova-shield-cluster       
+  ECS_CLUSTER: nova-shield-telemetry-cluster       
   SERVER_ECR_REPO: nova-shield-telemetry     
   SIMULATOR_ECR_REPO: nova-shield-telemetry     
 
