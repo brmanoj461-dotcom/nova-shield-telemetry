@@ -16,5 +16,5 @@ COPY app.py .
 # Inform Docker that the container listens on port 8000 at runtime
 EXPOSE 8000
 
-# Execute the FastAPI server backend on container startup
-CMD ["python", "app.py"]
+# Execute the FastAPI server backend explicitly bound to all network interfaces
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

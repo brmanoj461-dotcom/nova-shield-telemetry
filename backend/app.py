@@ -1,15 +1,13 @@
 import os
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
-from typing import Dict, List
+from typing import Dict
 
 # Initialize FastAPI App
 app = FastAPI(title="Nova-Shield Telemetry Core")
 
 # Global in-memory storage simulating your metrics/state
-# Tracks the incoming multi-tenant infrastructure clusters
 telemetry_data: Dict[str, dict] = {}
 
 # Define the expected telemetry payload validation layout
@@ -22,6 +20,14 @@ class TelemetryPayload(BaseModel):
     network_throughput_mbps: float
 
 # ==========================================
+# 0. Root Redirect (Fixes empty landing page)
+# ==========================================
+@app.get("/")
+async def root_redirect():
+    """Redirects the base URL straight to the telemetry dashboard."""
+    return RedirectResponse(url="/dashboard")
+
+# ==========================================
 # 1. API Endpoint for Simulator Sidecar
 # ==========================================
 @app.post("/api/v1/telemetry")
@@ -30,7 +36,6 @@ async def receive_telemetry(payload: TelemetryPayload):
     Receives live performance data from the sidecar simulator
     running on localhost within the same Fargate task network namespace.
     """
-    # Store or update cluster metrics based on unique cluster identifier
     telemetry_data[payload.cluster_id] = {
         "tenant_id": payload.tenant_id,
         "status": payload.status,
@@ -48,10 +53,8 @@ async def get_dashboard(request: Request):
     """
     Renders the live monitoring dashboard layout populated with real-time telemetry data.
     """
-    # Build HTML dynamically to avoid static file lookup failures on container runtimes
     cluster_count = len(telemetry_data)
     
-    # Generate live profiles rows if data stream exists
     profiles_html = ""
     if not telemetry_data:
         profiles_html = '<div style="color: #a0aec0; font-style: italic; text-align: center; padding: 20px;">Awaiting data streams from network server simulator...</div>'
@@ -76,7 +79,7 @@ async def get_dashboard(request: Request):
     <html>
     <head>
         <title>Nova-Shield Telemetry Dashboard</title>
-        <meta http-equiv="refresh" content="3"> <!-- Auto-refresh page every 3 seconds to pull live updates -->
+        <meta http-equiv="refresh" content="3"> 
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a202c; color: #fff; margin: 0; padding: 40px; }}
             .container {{ max-width: 900px; margin: 0 auto; }}
@@ -119,6 +122,5 @@ async def get_dashboard(request: Request):
 # ==========================================
 if __name__ == "__main__":
     import uvicorn
-    # Fargate requires binding to 0.0.0.0 instead of 127.0.0.1 to accept external traffic
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)

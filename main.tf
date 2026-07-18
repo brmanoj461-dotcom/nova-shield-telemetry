@@ -22,6 +22,7 @@ resource "aws_vpc" "nova_shield_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
+
   tags = {
     Name = "nova-shield-vpc"
   }
@@ -32,6 +33,7 @@ resource "aws_subnet" "public_subnet" {
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
+
   tags = {
     Name = "nova-shield-public-subnet"
   }
@@ -39,6 +41,7 @@ resource "aws_subnet" "public_subnet" {
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.nova_shield_vpc.id
+
   tags = {
     Name = "nova-shield-igw"
   }
@@ -91,6 +94,7 @@ resource "aws_security_group" "ecs_sg" {
 resource "aws_ecr_repository" "nova_shield" {
   name                 = "nova-shield-telemetry"
   image_tag_mutability = "MUTABLE"
+
   image_scanning_configuration {
     scan_on_push = true
   }
