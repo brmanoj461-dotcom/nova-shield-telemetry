@@ -3,8 +3,8 @@ import time
 import random
 import requests
 
-BACKEND_URL = "http://localhost:8000/api/v1/telemetry"
-HEALTH_CHECK_URL = "http://localhost:8000/dashboard"
+BACKEND_URL = "http://127.0.0.1:8000/api/v1/telemetry"
+HEALTH_CHECK_URL = "http://127.0.0.1:8000/dashboard"
 MAX_RETRIES = 10
 RETRY_DELAY_SECONDS = 3
 
