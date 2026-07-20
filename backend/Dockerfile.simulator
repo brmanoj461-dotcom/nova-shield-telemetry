@@ -1,14 +1,15 @@
 # Use an official, lightweight Python runtime base image
 FROM python:3.11-slim
 
-# Set the working directory inside the container
+# Disable stdout buffering so simulator logs stream live
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-# Directly install the requests library needed for sending HTTP payloads
+# Install dependencies directly
 RUN pip install --no-cache-dir requests
 
-# Copy the complete simulator loop script into the container
-COPY simulator.py .
+# Copy everything from the directory into /app
+COPY . .
 
-# Execute the telemetry data stream on container startup
 CMD ["python", "simulator.py"]
