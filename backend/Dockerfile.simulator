@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir requests
 # Copy everything from the directory into /app
 COPY . .
 
-CMD ["python", "simulator.py"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
