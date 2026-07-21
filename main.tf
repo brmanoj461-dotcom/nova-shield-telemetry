@@ -174,7 +174,7 @@ resource "aws_ecs_task_definition" "nova_shield_task" {
     },
     {
       name      = "nova-shield-simulator"
-      image     = image = "${aws_ecr_repository.nova_shield_simulator.repository_url}:latest"
+     image = "${aws_ecr_repository.nova_shield_simulator.repository_url}:latest"
       essential = false
       environment = [
         {
