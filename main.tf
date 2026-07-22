@@ -100,6 +100,15 @@ resource "aws_ecr_repository" "nova_shield" {
   }
 }
 
+resource "aws_ecr_repository" "nova_shield_simulator" {
+  name                 = "nova-shield-simulator"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # ==========================================
 # 5. ECS Compute Cluster & Logging Framework
 # ==========================================
@@ -149,7 +158,7 @@ resource "aws_ecs_task_definition" "nova_shield_task" {
   container_definitions = jsonencode([
     {
       name      = "nova-shield-server"
-      image     = image = "${aws_ecr_repository.nova_shield.repository_url}:latest"
+      image     = "${aws_ecr_repository.nova_shield.repository_url}:latest"
       essential = true
       portMappings = [
         {
@@ -174,7 +183,7 @@ resource "aws_ecs_task_definition" "nova_shield_task" {
     },
     {
       name      = "nova-shield-simulator"
-     image = "${aws_ecr_repository.nova_shield_simulator.repository_url}:latest"
+      image     = "${aws_ecr_repository.nova_shield_simulator.repository_url}:latest"
       essential = false
       environment = [
         {
