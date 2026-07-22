@@ -1,15 +1,12 @@
-# Use an official, lightweight Python runtime base image
 FROM python:3.11-slim
 
-# Disable stdout buffering so simulator logs stream live
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dependencies directly
-RUN pip install --no-cache-dir requests
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything from the directory into /app
 COPY . .
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "simulator.py"]
