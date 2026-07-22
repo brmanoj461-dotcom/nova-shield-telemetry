@@ -1,15 +1,15 @@
-name: Deploy to Amazon ECS
+Name: Deploy to Amazon ECS
 
 on:
   push:
     branches: [ "main" ]
 
 env:
-  AWS_REGION: us-east-1                  # Double check if your Fargate cluster is in a different region
+  AWS_REGION: us-east-1                  
   ECS_SERVICE: nova-shield-service       
   ECS_CLUSTER: nova-shield-telemetry-cluster       
-  SERVER_ECR_REPO: nova-shield-telemetry     
-  SIMULATOR_ECR_REPO: nova-shield-telemetry     
+  SERVER_ECR_REPO: nova-shield-server        # Fixed: Repository for Server
+  SIMULATOR_ECR_REPO: nova-shield-simulator    # Fixed: Repository for Simulator
 
 jobs:
   deploy:
