@@ -4,8 +4,9 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Explicitly install requests alongside requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir requests fastapi uvicorn pydantic -r requirements.txt
 
 COPY . .
 
