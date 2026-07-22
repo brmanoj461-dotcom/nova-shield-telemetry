@@ -1,4 +1,4 @@
-Name: Deploy to Amazon ECS
+name: Deploy to Amazon ECS
 
 on:
   push:
@@ -8,8 +8,8 @@ env:
   AWS_REGION: us-east-1                  
   ECS_SERVICE: nova-shield-service       
   ECS_CLUSTER: nova-shield-telemetry-cluster       
-  SERVER_ECR_REPO: nova-shield-server        # Fixed: Repository for Server
-  SIMULATOR_ECR_REPO: nova-shield-simulator    # Fixed: Repository for Simulator
+  SERVER_ECR_REPO: nova-shield-server        
+  SIMULATOR_ECR_REPO: nova-shield-simulator    
 
 jobs:
   deploy:
