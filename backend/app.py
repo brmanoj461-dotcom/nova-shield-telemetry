@@ -1,73 +1,359 @@
-import os
+import time
+from typing import List, Dict
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import List
 
-app = FastAPI(title="Nova Shield Telemetry Engine")
+app = FastAPI(title="Nova Shield Telemetry Core")
 
-# In-memory storage for demonstration metrics
-telemetry_db = []
+# In-memory telemetry storage
+telemetry_db: Dict[str, dict] = {
+    "tenant-alpha": {
+        "tenant_id": "tenant-alpha",
+        "name": "Tenant_A",
+        "status": "WARNING",
+        "cpu": 40.33,
+        "memory": 49.20,
+        "device_id": "dev-001"
+    },
+    "tenant-beta": {
+        "tenant_id": "tenant-beta",
+        "name": "Tenant_B",
+        "status": "WARNING",
+        "cpu": 51.14,
+        "memory": 51.92,
+        "device_id": "dev-002"
+    },
+    "tenant-gamma": {
+        "tenant_id": "tenant-gamma",
+        "name": "Tenant_C",
+        "status": "INFO",
+        "cpu": 71.14,
+        "memory": 61.00,
+        "device_id": "dev-003"
+    },
+    "tenant-delta": {
+        "tenant_id": "tenant-delta",
+        "name": "Tenant_D",
+        "status": "INFO",
+        "cpu": 50.37,
+        "memory": 61.50,
+        "device_id": "dev-004"
+    }
+}
 
 class TelemetryData(BaseModel):
+    tenant_id: str
     device_id: str
-    timestamp: float
-    status: str
+    metric_name: str
     metric_value: float
+    status: str
+    timestamp: float
 
-@app.get("/", include_in_schema=False)
-async def root_redirect():
-    return HTMLResponse(content="<script>window.location.href='/dashboard';</script>", status_code=200)
-
-@app.post("/api/v1/telemetry", status_code=201)
+@app.post("/api/v1/telemetry")
 async def ingest_telemetry(data: TelemetryData):
-    telemetry_db.append(data.dict())
-    # Keep database bound to the last 50 entries for memory efficiency
-    if len(telemetry_db) > 50:
-        telemetry_db.pop(0)
-    return {"status": "success", "received": data.device_id}
+    tenant_key = data.tenant_id.lower()
+    
+    # Format or initialize tenant entry
+    if tenant_key not in telemetry_db:
+        telemetry_db[tenant_key] = {
+            "tenant_id": data.tenant_id,
+            "name": data.tenant_id.replace("_", " ").title(),
+            "status": data.status.upper(),
+            "cpu": 0.0,
+            "memory": 50.0,
+            "device_id": data.device_id
+        }
+    
+    # Update metric state dynamically
+    if "cpu" in data.metric_name.lower():
+        telemetry_db[tenant_key]["cpu"] = round(data.metric_value, 2)
+    elif "mem" in data.metric_name.lower():
+        telemetry_db[tenant_key]["memory"] = round(data.metric_value, 2)
+        
+    telemetry_db[tenant_key]["status"] = data.status.upper() if data.status != "ok" else "INFO"
+    telemetry_db[tenant_key]["device_id"] = data.device_id
+    
+    return {"status": "success", "received": data}
+
+@app.get("/api/v1/telemetry/feed")
+async def get_feed():
+    return list(telemetry_db.values())
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def get_dashboard():
-    # Build a simple real-time visualization layer
-    profiles_html = ""
-    for entry in reversed(telemetry_db):
-        profiles_html += f"""
-        <div style='padding: 10px; margin: 5px 0; background: #eef2f3; border-left: 4px solid #007bff;'>
-            <strong>Device:</strong> {entry['device_id']} | 
-            <strong>Status:</strong> {entry['status']} | 
-            <strong>Value:</strong> {entry['metric_value']}
-        </div>
-        """
-    
-    html_content = f"""
+    html_content = """
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <title>Nova Shield Telemetry Dashboard</title>
-        <meta http-equiv="refresh" content="3">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Telemetry Core Analytics</title>
         <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; background: #fafafa; color: #333; }}
-            .container {{ max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-            h1 {{ color: #007bff; }}
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background-color: #0b1120;
+                color: #f8fafc;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                padding: 24px 16px;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+            /* Header */
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 24px;
+            }
+            .header-title h1 {
+                font-size: 28px;
+                font-weight: 800;
+                color: #38bdf8;
+                line-height: 1.1;
+            }
+            .header-title p {
+                font-size: 13px;
+                color: #64748b;
+                margin-top: 6px;
+                font-weight: 500;
+            }
+            .cluster-badge {
+                background-color: #111c35;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+            .cluster-status {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                color: #22c55e;
+                font-weight: 700;
+            }
+            .pulse-dot {
+                width: 8px;
+                height: 8px;
+                background-color: #22c55e;
+                border-radius: 50%;
+                box-shadow: 0 0 8px #22c55e;
+            }
+            
+            /* Stat Cards */
+            .stat-card {
+                background-color: #131c31;
+                border: 1px solid #1e2d4a;
+                border-radius: 10px;
+                padding: 16px;
+                margin-bottom: 16px;
+            }
+            .stat-card .label {
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                color: #64748b;
+                text-transform: uppercase;
+                margin-bottom: 8px;
+            }
+            .stat-card .value-num {
+                font-size: 32px;
+                font-weight: 800;
+                color: #ffffff;
+            }
+            .stat-card .value-purple {
+                font-size: 22px;
+                font-weight: 800;
+                color: #c084fc;
+            }
+
+            /* Section Header */
+            .section-title {
+                font-size: 22px;
+                font-weight: 700;
+                color: #ffffff;
+                margin: 28px 0 16px 0;
+            }
+
+            /* Tenant Cards */
+            .tenant-card {
+                background-color: #131c31;
+                border: 1px solid #1e2d4a;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 16px;
+                position: relative;
+                overflow: hidden;
+            }
+            .tenant-card::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 5px;
+                background-color: #f43f5e; /* Warning Highlight */
+            }
+            .tenant-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+            }
+            .tenant-name {
+                font-size: 18px;
+                font-weight: 700;
+                color: #ffffff;
+            }
+            .badge-tag {
+                font-size: 10px;
+                font-weight: 800;
+                padding: 3px 8px;
+                border-radius: 4px;
+                letter-spacing: 0.5px;
+            }
+            .badge-warning {
+                background-color: #9f1239;
+                color: #fecdd3;
+            }
+            .badge-info {
+                background-color: #881337;
+                color: #fda4af;
+            }
+            .tenant-id {
+                font-size: 12px;
+                color: #64748b;
+                margin-bottom: 16px;
+            }
+
+            /* Metric Bars */
+            .metric-row {
+                margin-bottom: 12px;
+            }
+            .metric-labels {
+                display: flex;
+                justify-content: space-between;
+                font-size: 13px;
+                color: #94a3b8;
+                margin-bottom: 6px;
+            }
+            .metric-val {
+                font-weight: 700;
+                color: #ffffff;
+            }
+            .progress-bg {
+                width: 100%;
+                height: 8px;
+                background-color: #1e293b;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .progress-fill-blue {
+                height: 100%;
+                background-color: #38bdf8;
+                border-radius: 4px;
+                transition: width 0.5s ease;
+            }
+            .progress-fill-purple {
+                height: 100%;
+                background-color: #c084fc;
+                border-radius: 4px;
+                transition: width 0.5s ease;
+            }
         </style>
     </head>
     <body>
-        <div class="container">
-            <h1>Nova Shield Live Telemetry Monitor</h1>
-            <p>Status: <span style="color: green; font-weight: bold;">Connected Engine Active</span></p>
-            <hr/>
-            <h3>Recent Metrics Profiles:</h3>
-            <div>
-                {profiles_html if profiles_html else "<p style='color: #777;'>Waiting for simulation stream updates...</p>"}
+        <!-- Header -->
+        <div class="header">
+            <div class="header-title">
+                <h1>Telemetry<br>Core</h1>
+                <p>Multi-Tenant Infrastructure<br>Analytics Engine</p>
+            </div>
+            <div class="cluster-badge">
+                <div class="cluster-status">
+                    <div class="pulse-dot"></div> Cluster
+                </div>
+                <div style="color: #64748b;">State:</div>
+                <div style="color: #22c55e; font-weight: 700;">Operational</div>
             </div>
         </div>
+
+        <!-- Top Stat Cards -->
+        <div class="stat-card">
+            <div class="label">MONITORED INFRASTRUCTURE CLUSTERS</div>
+            <div class="value-num" id="cluster-count">4</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="label">DATA PIPELINE PROTOCOL</div>
+            <div class="value-purple">REST HTTP/JSON + AWS S3</div>
+        </div>
+
+        <!-- Target Profiles -->
+        <div class="section-title">Live Target Profiles</div>
+        <div id="profiles-container"></div>
+
+        <script>
+            async function updateFeed() {
+                try {
+                    const res = await fetch('/api/v1/telemetry/feed');
+                    const data = await res.json();
+                    
+                    document.getElementById('cluster-count').innerText = data.length;
+                    const container = document.getElementById('profiles-container');
+                    container.innerHTML = '';
+
+                    data.forEach(item => {
+                        const isWarning = item.status === 'WARNING';
+                        const badgeClass = isWarning ? 'badge-warning' : 'badge-info';
+                        
+                        const cardHTML = `
+                            <div class="tenant-card">
+                                <div class="tenant-header">
+                                    <div class="tenant-name">${item.name}</div>
+                                    <span class="badge-tag ${badgeClass}">${item.status}</span>
+                                </div>
+                                <div class="tenant-id">ID: ${item.tenant_id}</div>
+                                
+                                <div class="metric-row">
+                                    <div class="metric-labels">
+                                        <span>CPU Consumption</span>
+                                        <span class="metric-val">${item.cpu}%</span>
+                                    </div>
+                                    <div class="progress-bg">
+                                        <div class="progress-fill-blue" style="width: ${Math.min(item.cpu, 100)}%;"></div>
+                                    </div>
+                                </div>
+
+                                <div class="metric-row">
+                                    <div class="metric-labels">
+                                        <span>Memory Allocation</span>
+                                        <span class="metric-val">${item.memory}%</span>
+                                    </div>
+                                    <div class="progress-bg">
+                                        <div class="progress-fill-purple" style="width: ${Math.min(item.memory, 100)}%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        container.innerHTML += cardHTML;
+                    });
+                } catch (e) {
+                    console.error("Error fetching telemetry feed:", e);
+                }
+            }
+
+            setInterval(updateFeed, 2000);
+            updateFeed();
+        </script>
     </body>
     </html>
     """
-    return HTMLResponse(content=html_content, status_code=200)
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    return html_content
