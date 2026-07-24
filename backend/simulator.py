@@ -1,7 +1,6 @@
 import os
 import time
 import requests
-from datetime import datetime, timezone
 
 TARGET_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1/telemetry")
 
@@ -16,7 +15,7 @@ def run_simulator():
                 "metric_name": "cpu_usage",
                 "metric_value": 45.2,
                 "status": "ok",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": time.time()  # Float Unix epoch time matching backend schema
             }
             
             response = requests.post(TARGET_URL, json=payload, timeout=5)
